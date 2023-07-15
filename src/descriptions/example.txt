@@ -1,0 +1,27 @@
+package descriptions
+
+import "fmt"
+
+type <module>Description int32
+
+/*
+
+
+
+*/
+
+const (
+
+)
+
+var <module>DescriptionToString = map[<module>Description]string{
+
+}
+
+var <module>DescriptionDescription = map[<module>Description]string{
+
+}
+
+func (d <module>Description) toString() string {
+	return fmt.Sprintf("%s (%d) - %s", <module>DescriptionToString[d], d, <module>DescriptionDescription[d])
+}

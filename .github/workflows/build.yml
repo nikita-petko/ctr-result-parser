@@ -1,0 +1,102 @@
+name: Go Build
+
+on:
+  push:
+    branches:
+      - "master"
+    paths:
+      - "src/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "src/**"
+      - ".github/workflows/**"
+
+env:
+  PROJECT_NAME: 'ctr-result-parser'
+
+
+jobs:
+  lint:
+    name: Go lint
+    if: "!contains(toJSON(github.event.commits.*.message), '[SKIP BUILD]')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup the Golang environment with version 1.20.x
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.20.x
+
+      - name: Run lint
+        working-directory: ./src
+        run: go mod tidy && go mod vendor && go vet ./...
+
+
+  build:
+    name: Build
+    if: "!contains(toJSON(github.event.commits.*.message), '[SKIP BUILD]')"
+    needs: lint
+    runs-on: ubuntu-latest
+    
+    strategy:
+        fail-fast: true
+        matrix:
+            os: ["linux", "darwin", "windows"]
+            arch: ["x64", "arm64"]
+            config: ["debug", "release"]
+    
+    steps:
+      - name: Checkout repository.
+        uses: actions/checkout@v3
+
+      - name: Setup the Golang environment with version 1.20.x
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.20.x
+
+      - name: Run the build-<config>-<arch> make target
+        run: make build-${{ matrix.config }}-${{ matrix.arch }} GOOS=${{ matrix.os }} WITH_STDERR=1
+
+
+      - name: Create zip file
+        run: mkdir -p ${GITHUB_WORKSPACE}/build/${{ matrix.os }}/ && cd bin/${{ matrix.config }}/${{ matrix.os }}/${{ matrix.arch }} && zip -r ${GITHUB_WORKSPACE}/build/${{ matrix.os }}/${{ env.PROJECT_NAME }}-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.os }}.zip *
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.PROJECT_NAME }}-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.os }}
+          retention-days: 1
+          path: |
+            build/${{ matrix.os }}/${{ env.PROJECT_NAME }}-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.os }}.zip
+  
+        
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.ref_name == 'master' }}
+
+    strategy:
+      fail-fast: true
+
+    steps:
+    - name: Download  Artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: build
+
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: build-${{github.run_id}}
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ github.ref_name != 'master' }}
+        files: |
+          build/*/*.zip
